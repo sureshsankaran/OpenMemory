@@ -342,6 +342,62 @@ export const create_mcp_srv = () => {
         },
     );
 
+    srv.tool(
+        "openmemory_delete",
+        "Delete a memory by identifier. Removes the memory and all associated vectors and waypoints.",
+        {
+            id: z.string().min(1).describe("Memory identifier to delete"),
+            user_id: z
+                .string()
+                .trim()
+                .min(1)
+                .optional()
+                .describe(
+                    "Validate ownership against a specific user identifier before deletion",
+                ),
+        },
+        async ({ id, user_id }) => {
+            const u = uid(user_id);
+            const mem = await q.get_mem.get(id);
+            if (!mem)
+                return {
+                    content: [
+                        { type: "text", text: `Memory ${id} not found.` },
+                    ],
+                };
+            if (u && mem.user_id !== u)
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: `Memory ${id} not found for user ${u}. Cannot delete.`,
+                        },
+                    ],
+                };
+            
+            // Delete the memory, vectors, and waypoints
+            await q.del_mem.run(id);
+            await vector_store.deleteVectors(id);
+            await q.del_waypoints.run(id, id);
+            
+            const pay = {
+                deleted: true,
+                id: id,
+                primary_sector: mem.primary_sector,
+                user_id: mem.user_id ?? null,
+            };
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: `Successfully deleted memory ${id} (sector=${mem.primary_sector})${mem.user_id ? ` [user=${mem.user_id}]` : ""}`,
+                    },
+                    { type: "text", text: JSON.stringify(pay, null, 2) },
+                ],
+            };
+        },
+    );
+
     srv.resource(
         "openmemory-config",
         "openmemory://config",
@@ -366,6 +422,7 @@ export const create_mcp_srv = () => {
                     "openmemory_reinforce",
                     "openmemory_list",
                     "openmemory_get",
+                    "openmemory_delete",
                 ],
             };
             return {
