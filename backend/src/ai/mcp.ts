@@ -520,16 +520,44 @@ export const mcp = (app: any) => {
         res.end();
     });
 
+    // Handle GET requests for SSE connections (required by MCP SDK clients)
+    app.get("/mcp", async (req: any, res: any) => {
+        try {
+            await srv_ready;
+            const accept = req.headers.accept || "";
+            if (accept.includes("text/event-stream")) {
+                // SSE connection request - let the transport handle it
+                set_hdrs(res);
+                res.setHeader("Content-Type", "text/event-stream");
+                res.setHeader("Cache-Control", "no-cache");
+                res.setHeader("Connection", "keep-alive");
+                await trans.handleRequest(req, res);
+            } else {
+                // Regular GET without SSE - not supported
+                send_err(
+                    res,
+                    -32600,
+                    "GET requests require Accept: text/event-stream header for SSE, or use POST with JSON payload.",
+                    null,
+                    405,
+                );
+            }
+        } catch (error) {
+            console.error("[MCP] Error handling SSE request:", error);
+            if (!res.headersSent)
+                send_err(res, -32603, "Internal server error", null, 500);
+        }
+    });
+
     const method_not_allowed = (_req: IncomingMessage, res: ServerResponse) => {
         send_err(
             res,
             -32600,
-            "Method not supported. Use POST  /mcp with JSON payload.",
+            "Method not supported. Use POST /mcp with JSON payload or GET with Accept: text/event-stream.",
             null,
             405,
         );
     };
-    app.get("/mcp", method_not_allowed);
     app.delete("/mcp", method_not_allowed);
     app.put("/mcp", method_not_allowed);
 };
